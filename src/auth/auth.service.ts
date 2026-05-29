@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import Redis from 'ioredis';
 import { MailService } from '../mail/mail.service'
+import crypto from 'crypto';
 @Injectable()
 export class AuthService {
   constructor(
@@ -46,7 +47,9 @@ export class AuthService {
     30,
   );
 
-  console.log(`📲 OTP for ${phoneNumber}: ${otp}`);
+  if (process.env.NODE_ENV !== 'production') {
+   console.log(`📲 OTP for ${phoneNumber}: ${otp}`);
+}
 
   return {
     message: 'OTP sent successfully',
@@ -109,7 +112,7 @@ export class AuthService {
   };
 }
 async sendEmailOtp(email:string){
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 999999).toString();
 
     const otpKey = `email-otp:${email}`;
     const attemptsKey = `email-otp-attempts:${email}`;

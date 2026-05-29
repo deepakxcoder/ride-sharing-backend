@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import Redis from 'ioredis';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
 @Global()
 @Module({
@@ -7,13 +9,15 @@ import Redis from 'ioredis';
     {
       provide: 'REDIS_CLIENT',
       useFactory: () => {
-        return new Redis({
-          host: '127.0.0.1',
-          port: 6379,
-        });
+        // return new Redis({
+        //   host: process.env.REDIS_HOST!,
+        //   port: Number(process.env.REDIS_PORT!),
+        // });
+
+        return new Redis(process.env.REDIS_URL!);
       },
     },
   ],
   exports: ['REDIS_CLIENT'],
 })
-export class RedisModule {}
+export class RedisModule { }
