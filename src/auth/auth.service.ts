@@ -8,120 +8,121 @@ import crypto from 'crypto';
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject('REDIS_CLIENT') private readonly redis:Redis,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @InjectModel(User.name) private userModel: Model<User>,
-    private readonly mailService : MailService,
-  ) {}
+    private readonly mailService: MailService,
+  ) { }
 
   // 1. REQUEST OTP
- async requestOtp(phoneNumber: string) {
-  // 1️⃣ Check resend cooldown
-  const cooldownKey = `otp_cooldown:${phoneNumber}`;
-  const isCooling = await this.redis.get(cooldownKey);
+  async requestOtp(phoneNumber: string) {
+    // 1️⃣ Check resend cooldown
+    const cooldownKey = `otp_cooldown:${phoneNumber}`;
+    const isCooling = await this.redis.get(cooldownKey);
 
-  if (isCooling) {
-    throw new BadRequestException(
-      'Please wait before requesting a new OTP',
-    );
-  }
-
-  // 2️⃣ Generate OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-  // 3️⃣ Store OTP
-  await this.redis.set(
-    `otp:${phoneNumber}`,
-    otp,
-    'EX',
-    300,
-  );
-
-  // 4️⃣ Reset attempts
-  await this.redis.del(`otp_attempts:${phoneNumber}`);
-
-  // 5️⃣ Set resend cooldown
-  await this.redis.set(
-    cooldownKey,
-    '1',
-    'EX',
-    30,
-  );
-
-  if (process.env.NODE_ENV !== 'production') {
-   console.log(`📲 OTP for ${phoneNumber}: ${otp}`);
-}
-
-  return {
-    message: 'OTP sent successfully',
-    cooldown: 30,
-  };
-}
-
-
-  async verifyOtp(phoneNumber: string, otp: string) {
-  const otpKey = `otp:${phoneNumber}`;
-  const attemptsKey = `otp_attempts:${phoneNumber}`;
-
-  const storedOtp = await this.redis.get(otpKey);
-
-  if (!storedOtp) {
-    throw new BadRequestException('OTP expired');
-  }
-
-  // ❌ Wrong OTP
-  if (storedOtp !== otp) {
-    const attempts = await this.redis.incr(attemptsKey);
-
-    // ensure attempts expire with OTP
-    if (attempts === 1) {
-      await this.redis.expire(attemptsKey, 300);
-    }
-
-    if (attempts >= 3) {
-      await this.redis.del(otpKey);
+    if (isCooling) {
       throw new BadRequestException(
-        'Too many incorrect attempts. OTP blocked.',
+        'Please wait before requesting a new OTP',
       );
     }
 
-    throw new BadRequestException(
-      `Invalid OTP. Attempts left: ${3 - attempts}`,
+    // 2️⃣ Generate OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    // 3️⃣ Store OTP
+    await this.redis.set(
+      `otp:${phoneNumber}`,
+      otp,
+      'EX',
+      300,
     );
+
+    // 4️⃣ Reset attempts
+    await this.redis.del(`otp_attempts:${phoneNumber}`);
+
+    // 5️⃣ Set resend cooldown
+    await this.redis.set(
+      cooldownKey,
+      '1',
+      'EX',
+      30,
+    );
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`📲 OTP for ${phoneNumber}: ${otp}`);
+    }
+
+    return {
+      message: 'OTP sent successfully',
+      cooldown: 30,
+      otp,
+    };
   }
 
-  // ✅ Correct OTP
-  await this.redis.del(otpKey);
-  await this.redis.del(attemptsKey);
 
-  let user = await this.userModel.findOne({ phoneNumber });
-  let isNewUser = false;
+  async verifyOtp(phoneNumber: string, otp: string) {
+    const otpKey = `otp:${phoneNumber}`;
+    const attemptsKey = `otp_attempts:${phoneNumber}`;
 
-  if (!user) {
-    user = await this.userModel.create({
-      phoneNumber,
-      isVerified: true,
-    });
-    isNewUser = true;
+    const storedOtp = await this.redis.get(otpKey);
+
+    if (!storedOtp) {
+      throw new BadRequestException('OTP expired');
+    }
+
+    // ❌ Wrong OTP
+    if (storedOtp !== otp) {
+      const attempts = await this.redis.incr(attemptsKey);
+
+      // ensure attempts expire with OTP
+      if (attempts === 1) {
+        await this.redis.expire(attemptsKey, 300);
+      }
+
+      if (attempts >= 3) {
+        await this.redis.del(otpKey);
+        throw new BadRequestException(
+          'Too many incorrect attempts. OTP blocked.',
+        );
+      }
+
+      throw new BadRequestException(
+        `Invalid OTP. Attempts left: ${3 - attempts}`,
+      );
+    }
+
+    // ✅ Correct OTP
+    await this.redis.del(otpKey);
+    await this.redis.del(attemptsKey);
+
+    let user = await this.userModel.findOne({ phoneNumber });
+    let isNewUser = false;
+
+    if (!user) {
+      user = await this.userModel.create({
+        phoneNumber,
+        isVerified: true,
+      });
+      isNewUser = true;
+    }
+
+    return {
+      userId: String(user._id),
+      isNewUser,
+      roles: user.roles,
+      message: 'Login successful',
+    };
   }
-
-  return {
-    userId: String(user._id),
-    isNewUser,
-    roles:user.roles,
-    message: 'Login successful',
-  };
-}
-async sendEmailOtp(email:string){
+  async sendEmailOtp(email: string) {
     const otp = crypto.randomInt(100000, 999999).toString();
 
     const otpKey = `email-otp:${email}`;
     const attemptsKey = `email-otp-attempts:${email}`;
 
     // Save OTP (5 minutes)
-    await this.redis.set(otpKey, otp,"EX", 300);
+    await this.redis.set(otpKey, otp, "EX", 300);
 
     // Reset attempts
-    await this.redis.set(attemptsKey, '0',"EX", 300);
+    await this.redis.set(attemptsKey, '0', "EX", 300);
 
     // Send email
     await this.mailService.sendOtpEmail(email, otp);
@@ -130,8 +131,8 @@ async sendEmailOtp(email:string){
       message: 'OTP sent to email',
       expiresIn: 300,
     };
-}
-async verifyEmailOtp(email:string,otp:string){
+  }
+  async verifyEmailOtp(email: string, otp: string) {
     const otpKey = `email-otp:${email}`;
     const attemptsKey = `email-otp-attempts:${email}`;
 
@@ -150,7 +151,7 @@ async verifyEmailOtp(email:string,otp:string){
 
     if (savedOtp !== otp) {
       attempts += 1;
-      await this.redis.set(attemptsKey, attempts.toString(),"EX", 300);
+      await this.redis.set(attemptsKey, attempts.toString(), "EX", 300);
 
       throw new BadRequestException(
         `Invalid OTP. Attempts left: ${5 - attempts}`,
