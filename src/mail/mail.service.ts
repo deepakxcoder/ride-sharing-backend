@@ -32,7 +32,7 @@ export class MailService {
       console.log(process.env.SMTP_USER);
       console.log("PASS=", process.env.SMTP_PASS ? "FOUND" : "MISSING");
       await this.transporter.sendMail({
-        from: `"Ride Sharing App" <${process.env.SMTP_USER}>`,
+        from: `"Ride Sharing App" <${process.env.MAIL_FROM}>`,
         to: email,
         subject: 'Your Email Verification OTP',
         text: `Your OTP is ${otp}. It is valid for 5 minutes.`,
