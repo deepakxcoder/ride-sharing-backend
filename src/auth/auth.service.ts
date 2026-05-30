@@ -5,6 +5,10 @@ import { User } from '../users/schemas/user.schema';
 import Redis from 'ioredis';
 import { MailService } from '../mail/mail.service'
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+dotenv.config();
+
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -13,7 +17,7 @@ export class AuthService {
     private readonly mailService: MailService,
   ) { }
 
-  // 1. REQUEST OTP
+  // 1. REQUEST OTP Phone
   async requestOtp(phoneNumber: string) {
     // 1️⃣ Check resend cooldown
     const cooldownKey = `otp_cooldown:${phoneNumber}`;
@@ -58,7 +62,7 @@ export class AuthService {
     };
   }
 
-
+  // 2. VERIFY OTP Phone
   async verifyOtp(phoneNumber: string, otp: string) {
     const otpKey = `otp:${phoneNumber}`;
     const attemptsKey = `otp_attempts:${phoneNumber}`;
@@ -112,6 +116,8 @@ export class AuthService {
       message: 'Login successful',
     };
   }
+
+  // 3. REQUEST OTP Email
   async sendEmailOtp(email: string) {
     const otp = crypto.randomInt(100000, 999999).toString();
 
@@ -132,6 +138,8 @@ export class AuthService {
       expiresIn: 300,
     };
   }
+
+  // 4. VERIFY OTP Email
   async verifyEmailOtp(email: string, otp: string) {
     const otpKey = `email-otp:${email}`;
     const attemptsKey = `email-otp-attempts:${email}`;
